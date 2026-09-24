@@ -1,0 +1,22 @@
+64 samples of a sine of amplitude 1 at 5.5 cycles per window
+| Bin | Rectangular window | Hann window |
+|-----|--------------------|-------------|
+| 3   | 0.1619             | 0.02478     |
+| 4   | 0.2429             | 0.1701      |
+| 5   | 0.6641             | 0.8486      |
+| 6   | 0.6118             | 0.849       |
+| 7   | 0.1896             | 0.1696      |
+| 8   | 0.1067             | 0.02412     |
+
+A tone that fits a whole number of cycles shows amplitude 1 in a single bin. This one sits between bins, so its energy is spread and every reading is too low.
+128 samples of a sine of amplitude 1 at 10.5 cycles per window
+| Bin | Rectangular window | Hann window |
+|-----|--------------------|-------------|
+| 8   | 0.1432             | 0.0243      |
+| 9   | 0.2272             | 0.1698      |
+| 10  | 0.6508             | 0.8488      |
+| 11  | 0.6232             | 0.8489      |
+| 12  | 0.1994             | 0.1697      |
+| 13  | 0.1152             | 0.02423     |
+
+A tone that fits a whole number of cycles shows amplitude 1 in a single bin. This one sits between bins, so its energy is spread and every reading is too low.

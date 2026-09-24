@@ -1,0 +1,8 @@
+64 random samples (seed 1)
+energy in time:      sum |x|^2          = 5.20593
+energy in frequency: (1/N) sum |X|^2    = 5.20593
+relative difference: < 1e-12 (rounding error)
+256 random samples (seed 5)
+energy in time:      sum |x|^2          = 23.4093
+energy in frequency: (1/N) sum |X|^2    = 23.4093
+relative difference: < 1e-12 (rounding error)

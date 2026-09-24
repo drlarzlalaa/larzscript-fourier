@@ -1,0 +1,12 @@
+error: --n must be a power of two from 2 to 1024, got 100
+error: --n must be a power of two from 2 to 1024, got 2048
+error: --n must be a whole number, got 'abc'
+error: frequency must be above 0 and below 32 (half the sample count), got 40
+error: frequency must be above 0 and below 32 (half the sample count), got 0
+error: unknown component 'triangle' - use sin:FREQ:AMP[:PHASE] or dc:LEVEL
+error: sin needs frequency and amplitude, like sin:5:1 or sin:5:1:90, got 'sin:5'
+error: dc needs one number, like dc:0.25, got 'dc'
+error: frequency must be a number, got 'x'
+error: --freq must be from 3 to 29 for this window size, got 2
+error: --freq must be from 3 to 29 for this window size, got 31
+error: --n must be a power of two from 2 to 1024, got 1

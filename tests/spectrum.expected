@@ -1,0 +1,21 @@
+64 samples
+| Bin | Frequency (cycles per window) | Amplitude |
+|-----|-------------------------------|-----------|
+| 0   | 0                             | 0.25      |
+| 5   | 5                             | 1         |
+| 12  | 12                            | 0.5       |
+
+Only bins with amplitude of at least 0.001 are shown. Bin k is k whole cycles in the window; the dc level is bin 0.
+128 samples
+| Bin | Frequency (cycles per window) | Amplitude |
+|-----|-------------------------------|-----------|
+| 0   | 0                             | 0.5       |
+| 9   | 9                             | 0.75      |
+
+Only bins with amplitude of at least 0.001 are shown. Bin k is k whole cycles in the window; the dc level is bin 0.
+32 samples
+| Bin | Frequency (cycles per window) | Amplitude |
+|-----|-------------------------------|-----------|
+| 3   | 3                             | 2         |
+
+Only bins with amplitude of at least 0.001 are shown. Bin k is k whole cycles in the window; the dc level is bin 0.

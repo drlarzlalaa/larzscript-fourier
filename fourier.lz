@@ -1,0 +1,341 @@
+# LarzFourier - the fast Fourier transform, and what it can and cannot tell
+# you about a signal, written entirely in Larzscript.
+#
+#   larzscript fourier.lz spectrum --wave=sin:5:1,sin:12:0.5,dc:0.25
+#   larzscript fourier.lz leakage --freq=5.5
+#   larzscript fourier.lz parseval
+#   larzscript fourier.lz compare
+#
+# A signal of N samples is a sum of N sine waves; the discrete Fourier
+# transform (DFT) finds their amplitudes. The fast Fourier transform (FFT,
+# Cooley-Tukey radix-2, so N must be a power of two) gets the same answer in
+# about N log2 N steps instead of N squared.
+#
+#   spectrum   the frequencies present in a signal you describe:
+#              sin:FREQ:AMPLITUDE[:PHASE_DEGREES] and dc:LEVEL, joined by
+#              commas. FREQ is in cycles per window of N samples (bin numbers).
+#   leakage    a tone that does NOT fit a whole number of cycles in the window
+#              smears across bins and reads too small. A Hann window trades a
+#              little sharpness for far less smearing.
+#   parseval   Parseval's theorem: total energy is the same in time and in
+#              frequency, sum |x|^2 = (1/N) sum |X|^2.
+#   compare    the slow DFT and the fast FFT agree, at very different cost.
+#
+# Larzscript has no trigonometric functions, so sin and cos below are Taylor
+# series. tools/reference.py is an independent Python implementation using a
+# naive DFT and math.sin / math.cos; the tests were written only after both
+# agreed.
+
+import "cli" as cli
+import "table" as table
+import "args" as argmod
+
+fn fail(msg) { print("error: " + msg); exit(1) }
+
+fn whole(s, what) {
+  let x = nil
+  try { x = int(float(s)) } catch e { fail(what + " must be a whole number, got '" + str(s) + "'") }
+  return x
+}
+
+fn number(s, what) {
+  let x = nil
+  try { x = float(s) } catch e { fail(what + " must be a number, got '" + str(s) + "'") }
+  return x
+}
+
+# x with at most n significant digits, written out in full (no exponent),
+# so the output is the same on every Larzscript version.
+fn sig(x, n) {
+  if x == 0 { return "0" }
+  let a = x < 0 ? -x : x
+  let e = 0
+  while a >= 10.0 { a = a / 10.0; e = e + 1 }
+  while a < 1.0 { a = a * 10.0; e = e - 1 }
+  if round(a, n - 1) >= 10.0 { e = e + 1 }
+  let d = n - 1 - e
+  if d >= 0 { return str(round(x, d)) }
+  let scale = 1.0
+  let k = 0
+  while k < -d { scale = scale * 10.0; k = k + 1 }
+  return str(int(round(x / scale, 0) * scale))
+}
+
+let PI = 3.141592653589793
+let MOD = 2147483647
+let MUL = 48271
+
+fn reduce(x) {
+  while x > PI { x = x - 2 * PI }
+  while x < -PI { x = x + 2 * PI }
+  return x
+}
+
+fn sin(x0) {
+  let x = reduce(x0)
+  let term = x
+  let total = x
+  let n = 1
+  while n < 26 {
+    term = -term * x * x / ((2 * n) * (2 * n + 1))
+    total = total + term
+    n = n + 1
+  }
+  return total
+}
+
+fn cos(x0) {
+  let x = reduce(x0)
+  let term = 1.0
+  let total = 1.0
+  let n = 1
+  while n < 26 {
+    term = -term * x * x / ((2 * n - 1) * (2 * n))
+    total = total + term
+    n = n + 1
+  }
+  return total
+}
+
+fn is_power_of_two(n) {
+  if n < 2 { return false }
+  while n > 1 {
+    if n % 2 != 0 { return false }
+    n = floor(n / 2)
+  }
+  return true
+}
+
+fn log2_of(n) {
+  let k = 0
+  while n > 1 { n = floor(n / 2); k = k + 1 }
+  return k
+}
+
+# cos(2 pi k / n) and sin(2 pi k / n) for k = 0 .. n-1.
+fn twiddles(n) {
+  let c = []
+  let s = []
+  let k = 0
+  while k < n {
+    c.push(cos(2 * PI * k / n))
+    s.push(sin(2 * PI * k / n))
+    k = k + 1
+  }
+  return [c, s]
+}
+
+# Iterative radix-2 FFT. Returns [re, im] of the transform of (re, im).
+fn fft(re0, im0, tw) {
+  let n = len(re0)
+  let re = [0.0] * n
+  let im = [0.0] * n
+  let bits = log2_of(n)
+  let i = 0
+  while i < n {
+    let r = 0
+    let x = i
+    let b = 0
+    while b < bits { r = r * 2 + x % 2; x = floor(x / 2); b = b + 1 }
+    re[r] = re0[i]
+    im[r] = im0[i]
+    i = i + 1
+  }
+  let size = 2
+  while size <= n {
+    let half = floor(size / 2)
+    let step = floor(n / size)
+    let start = 0
+    while start < n {
+      let j = 0
+      while j < half {
+        let wr = tw[0][j * step]
+        let wi = -tw[1][j * step]
+        let a = start + j
+        let b = a + half
+        let tr = re[b] * wr - im[b] * wi
+        let ti = re[b] * wi + im[b] * wr
+        re[b] = re[a] - tr
+        im[b] = im[a] - ti
+        re[a] = re[a] + tr
+        im[a] = im[a] + ti
+        j = j + 1
+      }
+      start = start + size
+    }
+    size = size * 2
+  }
+  return [re, im]
+}
+
+# The slow way, straight from the definition: N times N complex multiplications.
+fn dft(re, im, tw) {
+  let n = len(re)
+  let outr = []
+  let outi = []
+  let k = 0
+  while k < n {
+    let sr = 0.0
+    let si = 0.0
+    let t = 0
+    while t < n {
+      let idx = (k * t) % n
+      let c = tw[0][idx]
+      let s = -tw[1][idx]
+      sr = sr + re[t] * c - im[t] * s
+      si = si + re[t] * s + im[t] * c
+      t = t + 1
+    }
+    outr.push(sr)
+    outi.push(si)
+    k = k + 1
+  }
+  return [outr, outi]
+}
+
+fn size_flag(a) {
+  let n = whole(argmod.flag(a, "n", "64"), "--n")
+  if not is_power_of_two(n) or n > 1024 { fail("--n must be a power of two from 2 to 1024, got " + str(n)) }
+  return n
+}
+
+# Builds the samples from a description like sin:5:1,sin:12:0.5:90,dc:0.25.
+fn make_wave(n, spec) {
+  let x = [0.0] * n
+  let count = 0
+  for part in spec.split(",") {
+    let f = part.split(":")
+    count = count + 1
+    if count > 8 { fail("--wave allows at most 8 components") }
+    if f[0] == "dc" {
+      if len(f) != 2 { fail("dc needs one number, like dc:0.25, got '" + part + "'") }
+      let level = number(f[1], "dc level")
+      let t = 0
+      while t < n { x[t] = x[t] + level; t = t + 1 }
+    } else if f[0] == "sin" {
+      if len(f) < 3 or len(f) > 4 { fail("sin needs frequency and amplitude, like sin:5:1 or sin:5:1:90, got '" + part + "'") }
+      let freq = number(f[1], "frequency")
+      let amp = number(f[2], "amplitude")
+      let phase = len(f) == 4 ? number(f[3], "phase") * PI / 180 : 0.0
+      if freq <= 0 or freq >= n / 2 { fail("frequency must be above 0 and below " + str(floor(n / 2)) + " (half the sample count), got " + sig(freq, 6)) }
+      let t = 0
+      while t < n { x[t] = x[t] + amp * sin(2 * PI * freq * t / n + phase); t = t + 1 }
+    } else { fail("unknown component '" + f[0] + "' - use sin:FREQ:AMP[:PHASE] or dc:LEVEL") }
+  }
+  return x
+}
+
+fn hann(n) {
+  let w = []
+  let t = 0
+  while t < n { w.push(0.5 - 0.5 * cos(2 * PI * t / n)); t = t + 1 }
+  return w
+}
+
+fn cmd_spectrum(a) {
+  let n = size_flag(a)
+  let x = make_wave(n, str(argmod.flag(a, "wave", "sin:5:1,sin:12:0.5,dc:0.25")))
+  let X = fft(x, [0.0] * n, twiddles(n))
+  let rows = [["Bin", "Frequency (cycles per window)", "Amplitude"]]
+  let k = 0
+  while k <= n / 2 {
+    let mag = sqrt(X[0][k] * X[0][k] + X[1][k] * X[1][k]) / n * (k == 0 or k == n / 2 ? 1 : 2)
+    if mag >= 0.001 { rows.push([str(k), str(k), sig(mag, 6)]) }
+    k = k + 1
+  }
+  print(str(n) + " samples")
+  print(table.render(rows))
+  print("")
+  print("Only bins with amplitude of at least 0.001 are shown. Bin k is k whole cycles in the window; the dc level is bin 0.")
+}
+
+fn cmd_leakage(a) {
+  let n = size_flag(a)
+  let freq = number(argmod.flag(a, "freq", "5.5"), "--freq")
+  if freq < 3 or freq >= n / 2 - 3 { fail("--freq must be from 3 to " + str(floor(n / 2) - 3) + " for this window size, got " + sig(freq, 6)) }
+  let x = []
+  let t = 0
+  while t < n { x.push(sin(2 * PI * freq * t / n)); t = t + 1 }
+  let w = hann(n)
+  let xh = []
+  let total_w = 0.0
+  t = 0
+  while t < n { xh.push(x[t] * w[t]); total_w = total_w + w[t]; t = t + 1 }
+  let tw = twiddles(n)
+  let R = fft(x, [0.0] * n, tw)
+  let H = fft(xh, [0.0] * n, tw)
+  let rows = [["Bin", "Rectangular window", "Hann window"]]
+  let k = floor(freq) - 2
+  while k <= floor(freq) + 3 {
+    rows.push([str(k), sig(2 * sqrt(R[0][k] * R[0][k] + R[1][k] * R[1][k]) / n, 4), sig(2 * sqrt(H[0][k] * H[0][k] + H[1][k] * H[1][k]) / total_w, 4)])
+    k = k + 1
+  }
+  print(str(n) + " samples of a sine of amplitude 1 at " + sig(freq, 6) + " cycles per window")
+  print(table.render(rows))
+  print("")
+  print("A tone that fits a whole number of cycles shows amplitude 1 in a single bin. This one sits between bins, so its energy is spread and every reading is too low.")
+}
+
+fn cmd_parseval(a) {
+  let n = size_flag(a)
+  let seed = whole(argmod.flag(a, "seed", "1"), "--seed")
+  let s = seed % MOD
+  if s == 0 { s = 1 }
+  let x = []
+  let i = 0
+  while i < n {
+    s = (MUL * s) % MOD
+    x.push(s / MOD - 0.5)
+    i = i + 1
+  }
+  let X = fft(x, [0.0] * n, twiddles(n))
+  let left = 0.0
+  let right = 0.0
+  i = 0
+  while i < n {
+    left = left + x[i] * x[i]
+    right = right + X[0][i] * X[0][i] + X[1][i] * X[1][i]
+    i = i + 1
+  }
+  right = right / n
+  let diff = (left - right) / left
+  if diff < 0 { diff = -diff }
+  print(str(n) + " random samples (seed " + str(seed) + ")")
+  print("energy in time:      sum |x|^2          = " + sig(left, 6))
+  print("energy in frequency: (1/N) sum |X|^2    = " + sig(right, 6))
+  print("relative difference: " + (diff < 0.000000000001 ? "< 1e-12 (rounding error)" : sig(diff, 3)))
+}
+
+fn cmd_compare(a) {
+  let n = size_flag(a)
+  let x = make_wave(n, "sin:3:1,sin:7:0.5:30,dc:0.1")
+  let tw = twiddles(n)
+  let F = fft(x, [0.0] * n, tw)
+  let D = dft(x, [0.0] * n, tw)
+  let worst = 0.0
+  let k = 0
+  while k < n {
+    let dr = F[0][k] - D[0][k]
+    let di = F[1][k] - D[1][k]
+    let d = sqrt(dr * dr + di * di)
+    if d > worst { worst = d }
+    k = k + 1
+  }
+  let bits = log2_of(n)
+  print(str(n) + " samples")
+  print("largest difference between the FFT and the DFT: " + (worst < 0.000000000001 ? "< 1e-12 (rounding error)" : sig(worst, 3)))
+  let rows = [["Method", "Complex multiplications"]]
+  rows.push(["DFT (from the definition)", str(n * n)])
+  rows.push(["FFT (radix-2)", str(floor(n / 2) * bits)])
+  print(table.render(rows))
+  print("")
+  print("The FFT does " + str(floor(n * n / (floor(n / 2) * bits))) + " times fewer multiplications at this size, and the gap widens as N grows.")
+}
+
+let app = cli.new("fourier", "the fast Fourier transform and its limits, in Larzscript")
+cli.command(app, "spectrum", "amplitudes of a signal you describe: spectrum [--n=64] [--wave=sin:5:1,dc:0.25]", fn(a) { cmd_spectrum(a) })
+cli.command(app, "leakage", "why a tone between bins reads too small: leakage [--n=64] [--freq=5.5]", fn(a) { cmd_leakage(a) })
+cli.command(app, "parseval", "energy is the same in time and frequency: parseval [--n=64] [--seed=1]", fn(a) { cmd_parseval(a) })
+cli.command(app, "compare", "the DFT and the FFT agree: compare [--n=64]", fn(a) { cmd_compare(a) })
+
+cli.run(app, args)
