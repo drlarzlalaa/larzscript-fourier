@@ -41,7 +41,7 @@ The FFT does 21 times fewer multiplications at this size, and the gap widens as 
 ## Does it check out?
 
 - **The program is right.** `tools/reference.py` is an independent Python implementation using a naive O(N^2) DFT and `math.sin` / `math.cos` (Larzscript has no trigonometry built in, so `fourier.lz` writes its own `sin` and `cos` as series and uses an FFT). Every spectrum, all the leakage columns for two window sizes and two tone frequencies, and the Parseval energies matched it before the tests were written.
-- **The theory is honoured.** Parseval's theorem holds to rounding error (about 1e-15 relative); the FFT and the DFT agree to rounding error; the rectangular and Hann readings for a half-bin tone average 0.64 and 0.85, as scalloping-loss theory predicts. Differences between two neighbouring bins (0.6641 and 0.6118 here) are real: the tone's mirror image at negative frequency interferes with it, and the effect shrinks as the window grows.
+- **The theory is honoured.** Parseval's theorem holds to rounding error (about 1e-15 relative); the FFT and the DFT agree to rounding error; the rectangular and Hann readings for a half-bin tone average 0.64 and 0.85, as scalloping-loss theory predicts. Differences between two neighbouring bins (0.6641 and 0.6118 here) are real: the tone's mirror image at negative frequency interferes with it, and the effect shrinks the farther the tone sits from zero frequency: the two readings differ by 0.052 for a tone at bin 5.5 but by only 0.028 for one at bin 10.5 (`leakage --n=128 --freq=10.5`), and changing the window length alone does not remove it.
 
 ## Install
 
